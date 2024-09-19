@@ -12,17 +12,14 @@ stocklist = pd.read_csv(csvfilename, engine="python", encoding="ISO-8859-1")
 start = dt.datetime.now() - dt.timedelta(days=150)
 now = dt.datetime.now()
 
-
 # Define utility functions
 def find_amount(data, i):
     """Calculate turnover (Volume * Close price) for the i-th index from the end."""
     return data['Volume'].iloc[-i] * data['Close'].iloc[-i]
 
-
 def cross(parameter1, parameter2, i):
     """Check if parameter1 crosses above parameter2 at index i."""
     return (parameter1.iloc[-i - 1] < parameter2.iloc[-i - 1]) and (parameter1.iloc[-i] > parameter2.iloc[-i])
-
 
 def increasing(parameter, period):
     """Check if a parameter is increasing over a specified period."""
@@ -31,14 +28,12 @@ def increasing(parameter, period):
             return False
     return True
 
-
-def cross_within_period(parameter1, parameter2, begin, period):
-    """Check if parameter1 crosses above parameter2 within a specified period."""
+def cross_within_period(parameter1, parameter2, begin, period, dates):
+    """Check if parameter1 crosses above parameter2 within a specified period and return the date of the cross."""
     for i in range(begin, begin + period + 1):
         if cross(parameter1, parameter2, i):
-            return i
-    return 0
-
+            return dates.iloc[-i]  # Return date of the cross
+    return None
 
 # Download latest data using yfinance
 def snapshot(data_dir='data'):
@@ -54,7 +49,6 @@ def snapshot(data_dir='data'):
             data.to_csv(f'{data_dir}/{name}.csv')
     st.success("Data download completed!")
     return {"code": "success"}
-
 
 # Main function to process stocks and find patterns
 def process_stocks(data_dir='data', search_period=0):
@@ -86,14 +80,15 @@ def process_stocks(data_dir='data', search_period=0):
         ema8 = df['Close'].ewm(span=8).mean()
         ema21 = df['Close'].ewm(span=21).mean()
         slope_ema21 = (ema21.iloc[-1] - ema21.iloc[-3]) / 2
+        golden_cross_date = cross_within_period(ema8, ema21, 1, search_period, df['Date'])
 
-        if cross_within_period(ema8, ema21, 1, search_period) == 0 and slope_ema21 >= 0:
+        if golden_cross_date is None and slope_ema21 >= 0:
             continue
 
         # Volume EMA 8-21 Golden Cross
         vea8 = df['Volume'].ewm(span=8).mean()
         vea21 = df['Volume'].ewm(span=21).mean()
-        if cross_within_period(vea8, vea21, 1, search_period) == 0:
+        if cross_within_period(vea8, vea21, 1, search_period, df['Date']) is None:
             continue
 
         # MACD (5,34,5) check
@@ -102,13 +97,12 @@ def process_stocks(data_dir='data', search_period=0):
         macd_line = ema5 - ema34
         signal_line = macd_line.ewm(span=5).mean()
 
-        macd_index = cross_within_period(macd_line, signal_line, 1, search_period)
-        if macd_index != 0 and df['Close'].iloc[-1] > ema60.iloc[-1] and signal_line.iloc[-1] > signal_line.iloc[-2] and \
+        macd_index = cross_within_period(macd_line, signal_line, 1, search_period, df['Date'])
+        if macd_index is not None and df['Close'].iloc[-1] > ema60.iloc[-1] and signal_line.iloc[-1] > signal_line.iloc[-2] and \
                 signal_line.iloc[-1] >= 0:
-            ema821_gc.append([stock.strip('.csv'), df['Date'].iloc[-1], round(ema60.iloc[-1], 2)])
+            ema821_gc.append([stock.strip('.csv'), df['Date'].iloc[-1], round(ema60.iloc[-1], 2), golden_cross_date])
 
     return ema821_gc
-
 
 # Streamlit UI
 st.title("Stock Pattern Analysis")
@@ -130,7 +124,7 @@ if st.button("Run Analysis"):
 
     # Display results
     if result:
-        df_result = pd.DataFrame(result, columns=['Stock', 'Last Date', 'MACD GC at'])
+        df_result = pd.DataFrame(result, columns=['Stock', 'Last Date', 'MACD GC at', 'Golden Cross Date'])
         st.write(df_result)
     else:
         st.write("No stocks found with the specified criteria.")
