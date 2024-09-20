@@ -92,10 +92,10 @@ def process_stocks(data_dir='data', search_period=0):
             continue
 
         # MACD (5,34,5) check
-        ema5 = df['Close'].ewm(span=5).mean()
-        ema34 = df['Close'].ewm(span=34).mean()
-        macd_line = ema5 - ema34
-        signal_line = macd_line.ewm(span=5).mean()
+        ema12 = df['Close'].ewm(span=12).mean()
+        ema26 = df['Close'].ewm(span=26).mean()
+        macd_line = ema12 - ema26
+        signal_line = macd_line.ewm(span=9).mean()
 
         macd_index = cross_within_period(macd_line, signal_line, 1, search_period, df['Date'])
         if macd_index is not None and df['Close'].iloc[-1] > ema60.iloc[-1] and signal_line.iloc[-1] > signal_line.iloc[-2] and \
