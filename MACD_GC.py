@@ -44,7 +44,7 @@ def snapshot(data_dir='data'):
                 continue
             symbol = line.split(",")[1].strip()
             name = line.split(",")[0].strip()
-            st.write(f"Fetching data for {name} ({symbol})...")
+            #st.write(f"Fetching data for {name} ({symbol})...")
             data = yf.download(symbol, period="1y", threads=True)
             data.to_csv(f'{data_dir}/{name}.csv')
     st.success("Data download completed!")
