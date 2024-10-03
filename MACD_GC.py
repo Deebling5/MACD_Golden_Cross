@@ -32,7 +32,7 @@ def cross_within_period(parameter1, parameter2, begin, period, dates):
     """Check if parameter1 crosses above parameter2 within a specified period and return the date of the cross."""
     for i in range(begin, begin + period + 1):
         if cross(parameter1, parameter2, i):
-            return dates.iloc[-i]  # Return date of the cross
+            return dates.iloc[-i].strftime('%Y-%m-%d')  # Return date of the cross
     return None
 
 # Download latest data using yfinance
@@ -44,19 +44,20 @@ def snapshot(data_dir='data'):
                 continue
             symbol = line.split(",")[1].strip()
             name = line.split(",")[0].strip()
-            #st.write(f"Fetching data for {name} ({symbol})...")
+            st.write(f"Fetching data for {name} ({symbol})...")
             data = yf.download(symbol, period="1y", threads=True)
             data.to_csv(f'{data_dir}/{name}.csv')
     st.success("Data download completed!")
     return {"code": "success"}
 
 # Main function to process stocks and find patterns
-def process_stocks(data_dir='data', search_period=0):
+def process_stocks(data_dir='data', search_period=0, timeframe='daily'):
     ema821_gc = []
 
     for stock in os.listdir(data_dir):
         try:
             df = pd.read_csv(f'{data_dir}/{stock}')
+            df['Date'] = pd.to_datetime(df['Date'])  # Ensure Date is in datetime format
         except Exception as e:
             st.write(f"Error retrieving data for {stock}: {e}")
             continue
@@ -66,13 +67,21 @@ def process_stocks(data_dir='data', search_period=0):
             st.write(f"Not enough data points for {stock}, skipping.")
             continue
 
+        if timeframe == 'weekly':
+            # Resample to weekly data
+            df = df.resample('W', on='Date').agg({
+                'Close': 'last',    # Use the last closing price of the week
+                'Volume': 'sum',    # Sum of volumes for the week
+                'Date': 'last'      # Use the last date of the week for reference
+            }).dropna()
+
         # Check turnover
         if find_amount(df, 2) < 2e7:
             st.write(f"Turnover of {stock} is too low, skipping.")
             continue
 
         # EMA 60 Slope check (trend direction)
-        ema60 = df["Close"].ewm(span=60).mean()
+        ema60 = df['Close'].ewm(span=60).mean()
         if (ema60.iloc[-1] - ema60.iloc[-3]) / 2 < 0:
             continue
 
@@ -92,10 +101,10 @@ def process_stocks(data_dir='data', search_period=0):
             continue
 
         # MACD (5,34,5) check
-        ema12 = df['Close'].ewm(span=12).mean()
-        ema26 = df['Close'].ewm(span=26).mean()
-        macd_line = ema12 - ema26
-        signal_line = macd_line.ewm(span=9).mean()
+        ema5 = df['Close'].ewm(span=5).mean()
+        ema34 = df['Close'].ewm(span=34).mean()
+        macd_line = ema5 - ema34
+        signal_line = macd_line.ewm(span=5).mean()
 
         macd_index = cross_within_period(macd_line, signal_line, 1, search_period, df['Date'])
         if macd_index is not None and df['Close'].iloc[-1] > ema60.iloc[-1] and signal_line.iloc[-1] > signal_line.iloc[-2] and \
@@ -110,6 +119,9 @@ st.title("Stock Pattern Analysis")
 # Get the search period from the user
 search_period = st.number_input("Enter search period (in days)", min_value=0, value=0, step=1)
 
+# Select time frame (Daily or Weekly)
+timeframe = st.selectbox("Select time frame", options=["daily", "weekly"])
+
 # Directory where stock data is stored (ensure this path exists)
 data_dir = "data"
 
@@ -120,7 +132,7 @@ if st.button("Fetch Latest Data"):
 
 # Button to run stock analysis
 if st.button("Run Analysis"):
-    result = process_stocks(data_dir=data_dir, search_period=search_period)
+    result = process_stocks(data_dir=data_dir, search_period=search_period, timeframe=timeframe)
 
     # Display results
     if result:
